@@ -6,6 +6,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 import time
 
+try:
+    from curl_cffi import requests as curl_requests
+    _yf_session = curl_requests.Session(impersonate="chrome")
+except Exception:
+    _yf_session = None
+
 app = Flask(__name__)
 
 WATCHLIST = ['NVDA', 'RKLB', 'CRWV', 'MSTR', 'TSLA', 'AAPL', 'AMZN', 'QQQ', 'IREN', 'PLTR',
@@ -14,7 +20,26 @@ RISK_FREE_RATE = 0.053
 
 _cache = {}
 _cache_lock = threading.Lock()
-CACHE_TTL = 300
+CACHE_TTL = 900
+
+
+def _yf_ticker(symbol):
+    return yf.Ticker(symbol, session=_yf_session) if _yf_session else yf.Ticker(symbol)
+
+
+def _retry(fn, retries=3, base_delay=1.5):
+    last = None
+    for i in range(retries):
+        try:
+            return fn()
+        except Exception as e:
+            last = e
+            msg = str(e).lower()
+            if any(k in msg for k in ("rate", "too many", "429")):
+                time.sleep(base_delay * (2 ** i))
+                continue
+            raise
+    raise last
 
 
 def norm_pdf(x):
@@ -33,8 +58,8 @@ def calculate_gamma(S, K, T, sigma):
 
 def analyze_ticker(ticker):
     try:
-        t = yf.Ticker(ticker)
-        hist = t.history(period='5d')
+        t = _yf_ticker(ticker)
+        hist = _retry(lambda: t.history(period='5d'))
         if hist.empty:
             return {'ticker': ticker, 'error': 'No price data', 'score': 0, 'direction': 'NEUTRAL'}
 
@@ -69,7 +94,7 @@ def analyze_ticker(ticker):
         dte = (exp_date - today).days
         T = max(dte / 365.0, 1 / 365.0)
 
-        chain = t.option_chain(nearest_expiry)
+        chain = _retry(lambda: t.option_chain(nearest_expiry))
         calls = chain.calls.copy()
         puts = chain.puts.copy()
 
@@ -179,7 +204,7 @@ def analyze_ticker(ticker):
 def get_all_data():
     all_tickers = WATCHLIST + ['SPY']
 
-    with ThreadPoolExecutor(max_workers=8) as ex:
+    with ThreadPoolExecutor(max_workers=2) as ex:
         futures = {ex.submit(analyze_ticker, t): t for t in all_tickers}
         raw = {}
         for future in as_completed(futures):
