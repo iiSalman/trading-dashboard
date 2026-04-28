@@ -6,19 +6,22 @@ A small Flask dashboard that scores a watchlist of tickers using live data from 
 
 ```bash
 pip install -r requirements.txt
+export TRADIER_TOKEN=your_sandbox_token
 python app.py
 ```
 
-Then open http://localhost:5000.
+Then open http://localhost:5050.
 
-On macOS you can also double-click `run.command`.
+Get a free sandbox token at https://developer.tradier.com.
 
 ## Stack
 
 - Flask
-- yfinance
 - numpy
+- Tradier API (quotes + options chain with greeks)
 
 ## Configuration
 
-Edit the `WATCHLIST` and `RISK_FREE_RATE` constants at the top of `app.py`.
+- `TRADIER_TOKEN` (required): Tradier API token
+- `TRADIER_BASE` (optional): defaults to `https://sandbox.tradier.com/v1`
+- `WATCHLIST` and `RISK_FREE_RATE`: edit constants at the top of `app.py`
